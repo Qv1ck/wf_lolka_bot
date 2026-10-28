@@ -2,7 +2,7 @@
 const assert = require('assert');
 const {
     findWarframe, findMod, findWeapon,
-    warframeEmbed, modEmbed, weaponEmbed
+    warframeEmbed, modEmbed, weaponEmbed, circuitEmbed
 } = require('../src/bot');
 
 // --- Поиск варфреймов ---
@@ -45,6 +45,20 @@ const soma = findWeapon('Сома');
 assert.ok(soma, 'оружие по русскому имени');
 const wE = weaponEmbed(soma).toJSON();
 assert.ok(JSON.stringify(wE).includes('Крит'), 'характеристики оружия');
+
+// --- Гельминт из сгенерированных данных (вики) ---
+assert.ok(loki.helminth, 'гельминт в данных Локи');
+assert.strictEqual(loki.helminth.nameEn, 'Decoy', 'гельминт Локи — Decoy по вики');
+assert.strictEqual(loki.helminth.name, 'Приманка', 'гельминт Локи по-русски');
+
+// --- Цепь Дувири: расписание из browse.wf ---
+const duviri = require('../data/duviri.json');
+assert.strictEqual(duviri.frames.length, 11, '11 недель варфреймов');
+assert.strictEqual(duviri.weapons.length, 9, '9 недель оружия');
+assert.ok(duviri.frames.some(week => week.some(f => f.nameEn === 'Loki')), 'Локи есть в расписании');
+const circuit = circuitEmbed().toJSON();
+assert.ok(circuit.fields[0].value.length > 0, 'текущие варфреймы цепи');
+assert.ok(circuit.fields[1].value.length > 0, 'текущие инкарнон-оружия');
 
 // --- Лимиты embed (Lolka: поле ≤ 1024, сумма ≤ 6000) ---
 for (const [name, wf] of Object.entries(require('../data/warframes.json'))) {

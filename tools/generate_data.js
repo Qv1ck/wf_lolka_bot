@@ -6,11 +6,14 @@
 //  - content.warframe.com/PublicExport — официальные данные игры (RU + EN),
 //    обновляются с каждым патчем Warframe;
 //  - drops.warframestat.us — таблицы дропа (WFCD, из официальных данных DE);
+//  - wiki.warframe.com (Module:Warframes/data) — Гельминт-способности;
+//  - github.com/calamity-inc/browse.wf (live.ts) + словари browse.wf —
+//    полное расписание Цепи Дувири (варфреймы и инкарнон-оружия);
 //  - api.warframe.market/v2 — слаги и иконки для ссылок на маркет (опционально).
 //
 // Запуск: npm run generate
 // Результат: data/warframes.json, data/mods.json, data/weapons.json,
-//            data/aliases.json, data/meta.json
+//            data/drops.json, data/duviri.json, data/aliases.json, data/meta.json
 // ========================================================================
 
 const fs = require('fs');
@@ -20,6 +23,9 @@ const lzma = require('lzma');
 const PUBLIC_EXPORT = 'http://content.warframe.com/PublicExport';
 const DROPS_URL = 'https://drops.warframestat.us/data/all.json';
 const MARKET_ITEMS_URL = 'https://api.warframe.market/v2/items';
+const WIKI_WARFRAMES_URL = 'https://wiki.warframe.com/api.php?action=parse&page=Module:Warframes/data&prop=wikitext&format=json';
+const BROWSE_WF_LIVE_URL = 'https://raw.githubusercontent.com/calamity-inc/browse.wf/senpai/live.ts';
+const BROWSE_WF_DICT_URL = 'https://browse.wf/warframe-public-export-plus';
 
 const OUT_DIR = path.join(__dirname, '..', 'data');
 const MANUAL_ALIASES_PATH = path.join(__dirname, 'manual_aliases.json');
@@ -108,6 +114,10 @@ function buildWarframes(ruManifest, enManifest) {
         const isPrime = / Prime$/.test(en.name);
         const baseName = isPrime ? en.name.replace(/ Prime$/, '') : en.name;
 
+        const enAbilities = new Map(
+            (en.abilities || []).map(a => [a.abilityUniqueName, a.abilityName])
+        );
+
         warframes[en.name] = {
             nameRu: ru.name,
             nameEn: en.name,
@@ -119,7 +129,11 @@ function buildWarframes(ruManifest, enManifest) {
                 health: ru.health, shield: ru.shield, armor: ru.armor,
                 energy: ru.power, sprint: ru.sprintSpeed, mr: ru.masteryReq
             },
-            abilities: (ru.abilities || []).map(a => ({ name: a.abilityName, description: a.description })),
+            abilities: (ru.abilities || []).map(a => ({
+                name: a.abilityName,
+                nameEn: enAbilities.get(a.abilityUniqueName) || '',
+                description: a.description
+            })),
             market: isPrime ? {
                 slug: marketSlug(en.name),
                 set: `${marketSlug(en.name)}_set`,
@@ -268,6 +282,115 @@ function buildWarframeDrops(dropsData, warframes) {
 }
 
 // ------------------------------------------------------------------------
+// Гельминт-способности (wiki.warframe.com, Module:Warframes/data)
+// ------------------------------------------------------------------------
+
+// В Public Export данных о поглощении нет, поэтому берём поддерживаемый
+// сообществом Lua-модуль вики: у каждого базового варфрейма поле Subsumed.
+async function fetchHelminthData() {
+    const buffer = await downloadBuffer(WIKI_WARFRAMES_URL);
+    const wikitext = JSON.parse(buffer.toString('utf8')).parse.wikitext['*'];
+    const lines = wikitext.split('\n');
+
+    const start = lines.findIndex(l => /^\tWarframes = \{$/.test(l));
+    if (start < 0) throw new Error('В модуле вики не найдена секция Warframes');
+
+    const subsumed = {}; // EN-имя фрейма → EN-имя способности
+    let current = null;
+    let body = [];
+    const flush = () => {
+        if (current === null) return;
+        const text = body.join('\n');
+        if (!/_IgnoreEntry = true/.test(text)) {
+            const m = /Subsumed = "([^"]+)"/.exec(text);
+            if (m) subsumed[current] = m[1];
+        }
+        current = null;
+    };
+    for (const line of lines.slice(start)) {
+        const m = /^\t\t(?:\["([^"]+)"\]|([\w-]+)) = \{$/.exec(line);
+        if (m) {
+            flush();
+            current = m[1] || m[2];
+            body = [];
+        } else if (/^\t\t\},?$/.test(line)) {
+            flush();
+        } else if (current !== null) {
+            body.push(line);
+        }
+    }
+    flush();
+    return subsumed;
+}
+
+// Проставляет wf.helminth базовым варфреймам, сопоставляя EN-имя
+// способности из вики со способностями из манифеста (через nameEn)
+function applyHelminth(warframes, subsumed) {
+    let matched = 0;
+    for (const wf of Object.values(warframes)) {
+        if (wf.isPrime) continue;
+        const abilityEn = subsumed[wf.nameEn];
+        if (!abilityEn) continue;
+        const idx = wf.abilities.findIndex(a => a.nameEn === abilityEn);
+        wf.helminth = {
+            name: idx >= 0 ? wf.abilities[idx].name : abilityEn,
+            nameEn: abilityEn,
+            slot: idx >= 0 ? idx + 1 : 0
+        };
+        matched++;
+    }
+    return matched;
+}
+
+// ------------------------------------------------------------------------
+// Цепь Дувири: полное расписание (browse.wf live.ts + словари browse.wf)
+// ------------------------------------------------------------------------
+
+// browse.wf поддерживает актуальное расписание цепи (неделя вычисляется
+// от фиксированной эпохи, сами списки — в live.ts репозитория).
+// Имена внутри — локализационные ключи игры, разворачиваем их словарями.
+async function fetchDuviriCircuit(knownNamesRu = {}) {
+    const [liveBuffer, dictEnBuffer, dictRuBuffer] = await Promise.all([
+        downloadBuffer(BROWSE_WF_LIVE_URL),
+        downloadBuffer(`${BROWSE_WF_DICT_URL}/dict.en.json`),
+        downloadBuffer(`${BROWSE_WF_DICT_URL}/dict.ru.json`)
+    ]);
+    const liveTs = liveBuffer.toString('utf8');
+    const dictEn = JSON.parse(dictEnBuffer.toString('utf8'));
+    const dictRu = JSON.parse(dictRuBuffer.toString('utf8'));
+
+    const parseChoices = (name) => {
+        const m = new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`).exec(liveTs);
+        if (!m) throw new Error(`В live.ts не найден блок ${name}`);
+        const weeks = [];
+        for (const week of m[1].matchAll(/\[([^\]]+)\]/g)) {
+            weeks.push([...week[1].matchAll(/"([^"]+)"/g)].map(p => p[1]));
+        }
+        return weeks;
+    };
+
+    const framesBlockAt = liveTs.indexOf('const frameChoices');
+    const epochMatch = /EPOCH = (\d+) \* 1000/.exec(liveTs.slice(framesBlockAt));
+    if (framesBlockAt < 0 || !epochMatch) throw new Error('В live.ts не найдена эпоха цепи');
+
+    const resolve = (key) => {
+        const nameEn = dictEn[key] || key.split('/').pop();
+        return {
+            nameEn,
+            // словарь browse.wf местами не локализован (Lex и т.п.) —
+            // в таких случаях предпочитаем имя из манифеста DE
+            nameRu: knownNamesRu[nameEn] || dictRu[key] || nameEn
+        };
+    };
+
+    return {
+        epochMs: Number(epochMatch[1]) * 1000,
+        frames: parseChoices('frameChoices').map(week => week.map(resolve)),
+        weapons: parseChoices('weaponChoices').map(week => week.map(resolve))
+    };
+}
+
+// ------------------------------------------------------------------------
 // Алиасы для поиска (авто + ручные из старого бота)
 // ------------------------------------------------------------------------
 
@@ -362,6 +485,28 @@ async function main() {
         console.warn(`⚠ Дропы недоступны: ${error.message}`);
     }
 
+    console.log('▶ Гельминт-способности (wiki.warframe.com)...');
+    try {
+        const subsumed = await fetchHelminthData();
+        console.log(`  вики отдала ${Object.keys(subsumed).length} записей,` +
+            ` сопоставлено: ${applyHelminth(warframes, subsumed)}`);
+    } catch (error) {
+        console.warn(`⚠ Вики недоступна, Гельминт не обновлён: ${error.message}`);
+    }
+
+    console.log('▶ Расписание Цепи Дувири (browse.wf)...');
+    let duviri = null;
+    try {
+        const knownNamesRu = {};
+        for (const entry of [...Object.values(warframes), ...Object.values(weapons)]) {
+            knownNamesRu[entry.nameEn] = entry.nameRu;
+        }
+        duviri = await fetchDuviriCircuit(knownNamesRu);
+        console.log(`  недель с варфреймами: ${duviri.frames.length}, с оружием: ${duviri.weapons.length}`);
+    } catch (error) {
+        console.warn(`⚠ Расписание цепи не получено: ${error.message}`);
+    }
+
     console.log('▶ Проверка слагов маркета...');
     const market = await fetchMarketData();
     let verified = 0;
@@ -394,6 +539,7 @@ async function main() {
     write('mods.json', mods);
     write('weapons.json', weapons);
     write('drops.json', drops);
+    if (duviri) write('duviri.json', duviri);
     write('aliases.json', aliases);
     write('meta.json', {
         generatedAt: new Date().toISOString(),

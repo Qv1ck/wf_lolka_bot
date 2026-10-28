@@ -42,21 +42,59 @@ function loadJson(name, fallback = {}) {
     }
 }
 
-const warframes = loadJson('warframes.json');
-const mods = loadJson('mods.json');
-const weapons = loadJson('weapons.json');
-const drops = loadJson('drops.json');
-const aliases = loadJson('aliases.json');
-const meta = loadJson('meta.json', {});
+const db = { warframes: {}, mods: {}, weapons: {}, drops: {}, aliases: {}, meta: {}, duviri: null };
 
-// Ручные справочники (в git): Гельминт и недели Цепи Дувири
+function reloadData() {
+    db.warframes = loadJson('warframes.json');
+    db.mods = loadJson('mods.json');
+    db.weapons = loadJson('weapons.json');
+    db.drops = loadJson('drops.json');
+    db.aliases = loadJson('aliases.json');
+    db.meta = loadJson('meta.json', {});
+    db.duviri = loadJson('duviri.json', null);
+    console.log(`✓ Данные: варфреймов ${Object.keys(db.warframes).length},` +
+        ` модов ${Object.keys(db.mods).length}, оружия ${Object.keys(db.weapons).length}`);
+}
+reloadData();
+
+// Ручные справочники (в git) — запасной вариант, если сгенерированных данных нет
 const MANUAL_DIR = path.join(__dirname, '..', 'manual');
 const helminthDB = JSON.parse(fs.readFileSync(path.join(MANUAL_DIR, 'helminth.json'), 'utf8'));
 const duviriDB = JSON.parse(fs.readFileSync(path.join(MANUAL_DIR, 'duviri.json'), 'utf8'));
 
-// Обычная Цепь Дувири: 11-недельный цикл, опорная точка — неделя 3 от 24.11.2025
-function getCurrentDuviriWarframeWeek(now = new Date()) {
-    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Номер недели цепи от эпохи расписания (browse.wf), с защитой от отрицательных значений
+function getAbsoluteDuviriWeek(now = Date.now()) {
+    return Math.floor((now - db.duviri.epochMs) / WEEK_MS);
+}
+
+function getDuviriFrameWeekIndex(now = Date.now()) {
+    const week = getAbsoluteDuviriWeek(now) % db.duviri.frames.length;
+    return (week + db.duviri.frames.length) % db.duviri.frames.length;
+}
+
+function getDuviriWeaponWeekIndex(now = Date.now()) {
+    const week = getAbsoluteDuviriWeek(now) % db.duviri.weapons.length;
+    return (week + db.duviri.weapons.length) % db.duviri.weapons.length;
+}
+
+// Неделя (1-based), на которой варфрейм появляется в обычной цепи
+function findDuviriFrameWeek(nameEn) {
+    if (!db.duviri) return null;
+    const idx = db.duviri.frames.findIndex(week => week.some(f => f.nameEn === nameEn));
+    return idx >= 0 ? idx + 1 : null;
+}
+
+// Неделя (1-based), на которой оружие появляется в цепи Стального Пути
+function findDuviriWeaponWeek(nameEn) {
+    if (!db.duviri) return null;
+    const idx = db.duviri.weapons.findIndex(week => week.some(w => w.nameEn === nameEn));
+    return idx >= 0 ? idx + 1 : null;
+}
+
+// Запасной расчёт из ручного справочника: 11-недельный цикл, неделя 3 от 24.11.2025
+function getManualDuviriWeek(now = new Date()) {
     const elapsed = Math.floor((now.getTime() - Date.parse('2025-11-24T00:00:00Z')) / WEEK_MS);
     return ((3 - 1 + elapsed) % 11 + 11) % 11 + 1;
 }
@@ -98,22 +136,22 @@ const MARKET_URL = 'https://warframe.market/ru/items';
 
 function findWarframe(query) {
     const q = query.toLowerCase().trim();
-    if (aliases[q]) return warframes[aliases[q]] || null;
+    if (db.aliases[q]) return db.warframes[db.aliases[q]] || null;
 
-    const entries = Object.values(warframes);
-    const aliasKeys = Object.keys(aliases);
+    const entries = Object.values(db.warframes);
+    const aliasKeys = Object.keys(db.aliases);
     const aliasMatch = aliasKeys.find(a => a.startsWith(q));
 
     return entries.find(w => w.nameEn.toLowerCase() === q || w.nameRu.toLowerCase() === q)
         || entries.find(w => w.nameEn.toLowerCase().startsWith(q) || w.nameRu.toLowerCase().startsWith(q))
-        || (aliasMatch && warframes[aliases[aliasMatch]])
+        || (aliasMatch && db.warframes[db.aliases[aliasMatch]])
         || entries.find(w => w.nameEn.toLowerCase().includes(q) || w.nameRu.toLowerCase().includes(q))
         || null;
 }
 
 function findMod(query) {
     const q = query.toLowerCase().trim();
-    const entries = Object.values(mods);
+    const entries = Object.values(db.mods);
     return entries.find(m => m.nameEn.toLowerCase() === q || m.nameRu.toLowerCase() === q)
         || entries.find(m => m.nameEn.toLowerCase().startsWith(q) || m.nameRu.toLowerCase().startsWith(q))
         || entries.find(m => m.nameEn.toLowerCase().includes(q) || m.nameRu.toLowerCase().includes(q))
@@ -122,7 +160,7 @@ function findMod(query) {
 
 function findWeapon(query) {
     const q = query.toLowerCase().trim();
-    const entries = Object.values(weapons);
+    const entries = Object.values(db.weapons);
     return entries.find(w => w.nameEn.toLowerCase() === q || w.nameRu.toLowerCase() === q)
         || entries.find(w => w.nameEn.toLowerCase().startsWith(q) || w.nameRu.toLowerCase().startsWith(q))
         || entries.find(w => w.nameEn.toLowerCase().includes(q) || w.nameRu.toLowerCase().includes(q))
@@ -139,8 +177,8 @@ const COLOR_MOD = 0x2ECC71;
 const COLOR_WEAPON = 0xE67E22;
 
 function dataFooter() {
-    const date = meta.generatedAt
-        ? new Date(meta.generatedAt).toLocaleDateString('ru-RU')
+    const date = db.meta.generatedAt
+        ? new Date(db.meta.generatedAt).toLocaleDateString('ru-RU')
         : 'неизвестно';
     return { text: `Данные: Public Export DE · обновлено ${date}` };
 }
@@ -161,7 +199,7 @@ function cleanDescription(text) {
 }
 
 function formatDropsField(baseName) {
-    const entry = drops[baseName];
+    const entry = db.drops[baseName];
     if (!entry || !entry.parts || Object.keys(entry.parts).length === 0) return null;
 
     const lines = [];
@@ -178,7 +216,7 @@ function formatDropsField(baseName) {
 }
 
 function formatRelicsField(baseName) {
-    const entry = drops[baseName];
+    const entry = db.drops[baseName];
     if (!entry || !entry.relics || entry.relics.length === 0) return null;
 
     const byPart = {};
@@ -217,11 +255,12 @@ function warframeEmbed(wf) {
         });
     }
 
-    const helminth = helminthDB[wf.baseName] || helminthDB[wf.nameEn];
+    const helminth = wf.helminth || helminthDB[wf.baseName] || helminthDB[wf.nameEn];
     if (helminth) {
+        const abilityName = helminth.name || helminth.ability;
         embed.addFields({
             name: '🧬 Гельминт-способность',
-            value: `${helminth.ability} (слот ${helminth.slot})`
+            value: helminth.slot ? `${abilityName} (слот ${helminth.slot})` : abilityName
         });
     }
 
@@ -233,14 +272,17 @@ function warframeEmbed(wf) {
         inline: false
     });
 
-    const duviriWeek = duviriDB[wf.baseName.toLowerCase()];
+    const duviriWeek = db.duviri
+        ? findDuviriFrameWeek(wf.baseName)
+        : duviriDB[wf.baseName.toLowerCase()];
     if (duviriWeek) {
-        const current = getCurrentDuviriWarframeWeek();
+        const total = db.duviri ? db.duviri.frames.length : 11;
+        const current = db.duviri ? getDuviriFrameWeekIndex() + 1 : getManualDuviriWeek();
         embed.addFields({
             name: '🌀 Цепь Дувири',
             value: duviriWeek === current
-                ? `Неделя ${duviriWeek} из 11 — ✅ доступен СЕЙЧАС`
-                : `Неделя ${duviriWeek} из 11 (сейчас ${current})`
+                ? `Неделя ${duviriWeek} из ${total} — ✅ доступен СЕЙЧАС`
+                : `Неделя ${duviriWeek} из ${total} (сейчас ${current})`
         });
     }
 
@@ -297,7 +339,40 @@ function weaponEmbed(w) {
     if (w.noise) lines.push(`🔊 Шум: **${w.noise}**`);
 
     embed.addFields({ name: '📊 Характеристики', value: lines.join('\n') });
+
+    const circuitWeek = findDuviriWeaponWeek(w.nameEn);
+    if (circuitWeek) {
+        const total = db.duviri.weapons.length;
+        const current = getDuviriWeaponWeekIndex() + 1;
+        embed.addFields({
+            name: '🌀 Инкарнон (Цепь Дувири)',
+            value: circuitWeek === current
+                ? `Неделя ${circuitWeek} из ${total} — ✅ доступен СЕЙЧАС`
+                : `Неделя ${circuitWeek} из ${total} (сейчас ${current})`
+        });
+    }
     return embed;
+}
+
+function circuitEmbed() {
+    const frameIdx = getDuviriFrameWeekIndex();
+    const weaponIdx = getDuviriWeaponWeekIndex();
+    const nextReset = db.duviri.epochMs + (getAbsoluteDuviriWeek() + 1) * WEEK_MS;
+
+    return new EmbedBuilder()
+        .setTitle('🌀 Цепь Дувири — текущая неделя')
+        .setColor(COLOR_BASE)
+        .addFields(
+            {
+                name: `Варфреймы (неделя ${frameIdx + 1} из ${db.duviri.frames.length})`,
+                value: db.duviri.frames[frameIdx].map(f => f.nameRu).join('\n')
+            },
+            {
+                name: `Инкарнон-оружия, Стальной Путь (неделя ${weaponIdx + 1} из ${db.duviri.weapons.length})`,
+                value: db.duviri.weapons[weaponIdx].map(w => w.nameRu).join('\n')
+            }
+        )
+        .setFooter({ text: `Смена: ${new Date(nextReset).toLocaleDateString('ru-RU')} · расписание: browse.wf` });
 }
 
 // ========================================================================
@@ -337,6 +412,10 @@ const COMMANDS = [
             required: true,
             autocomplete: true
         }]
+    },
+    {
+        name: 'circuit',
+        description: 'Текущая неделя Цепи Дувири (варфреймы и инкарнон-оружия)'
     }
 ];
 
@@ -350,6 +429,46 @@ function autocompleteChoices(query, entries, makeChoice) {
         if (starts.length >= 25) break;
     }
     return [...starts, ...contains].slice(0, 25);
+}
+
+// ========================================================================
+// АВТООБНОВЛЕНИЕ БАЗЫ (раз в неделю, со сменой недели Цепи Дувири)
+// ========================================================================
+
+const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000; // проверка каждые 6 часов
+
+// Номер текущей недели (по эпохе цепи, иначе — просто абсолютная неделя)
+function currentWeekStamp(now = Date.now()) {
+    const epoch = db.duviri?.epochMs || 0;
+    return Math.floor((now - epoch) / WEEK_MS);
+}
+
+function dataWeekStamp() {
+    const generated = Date.parse(db.meta.generatedAt || 0) || 0;
+    const epoch = db.duviri?.epochMs || 0;
+    return Math.floor((generated - epoch) / WEEK_MS);
+}
+
+async function refreshDatabase(reason) {
+    console.log(`🔄 Обновление базы (${reason})...`);
+    const { spawn } = require('child_process');
+    const generator = path.join(__dirname, '..', 'tools', 'generate_data.js');
+    const code = await new Promise(resolve => {
+        spawn(process.execPath, [generator], { stdio: 'inherit' })
+            .on('exit', c => resolve(c ?? 1));
+    });
+    if (code === 0) {
+        reloadData();
+        console.log('✓ База обновлена');
+    } else {
+        console.error(`❌ Генератор завершился с кодом ${code}, оставляю старые данные`);
+    }
+}
+
+function checkWeeklyUpdate() {
+    if (dataWeekStamp() < currentWeekStamp()) {
+        refreshDatabase('началась новая игровая неделя').catch(console.error);
+    }
 }
 
 // ========================================================================
@@ -389,13 +508,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const query = interaction.options.getFocused();
             let choices = [];
             if (interaction.commandName === 'search') {
-                choices = autocompleteChoices(query, Object.values(warframes),
+                choices = autocompleteChoices(query, Object.values(db.warframes),
                     w => ({ name: `${w.nameRu} (${w.nameEn})`.slice(0, 100), value: w.nameEn }));
             } else if (interaction.commandName === 'mod') {
-                choices = autocompleteChoices(query, Object.values(mods),
+                choices = autocompleteChoices(query, Object.values(db.mods),
                     m => ({ name: `${m.nameRu} (${m.nameEn})`.slice(0, 100), value: m.nameEn }));
             } else if (interaction.commandName === 'weapon') {
-                choices = autocompleteChoices(query, Object.values(weapons),
+                choices = autocompleteChoices(query, Object.values(db.weapons),
                     w => ({ name: `${w.nameRu} (${w.nameEn})`.slice(0, 100), value: w.nameEn }));
             }
             await interaction.respond(choices);
@@ -403,6 +522,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         if (!interaction.isChatInputCommand()) return;
+
+        if (interaction.commandName === 'circuit') {
+            if (!db.duviri) {
+                await interaction.reply({ content: '❌ Расписание цепи не загружено (нет data/duviri.json).', ephemeral: true });
+                return;
+            }
+            await interaction.reply({ embeds: [circuitEmbed()] });
+            return;
+        }
 
         const query = interaction.options.getString('запрос');
 
@@ -435,7 +563,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 module.exports = {
     findWarframe, findMod, findWeapon,
-    warframeEmbed, modEmbed, weaponEmbed,
+    warframeEmbed, modEmbed, weaponEmbed, circuitEmbed,
     autocompleteChoices
 };
 
@@ -444,6 +572,7 @@ if (require.main === module) {
         console.error('❌ Не задан токен. Укажите LOLKA_TOKEN в окружении или .env');
         process.exit(1);
     }
+    setInterval(checkWeeklyUpdate, UPDATE_CHECK_MS);
     client.login(token).catch(error => {
         console.error('❌ Ошибка входа:', error.message);
         process.exit(1);
