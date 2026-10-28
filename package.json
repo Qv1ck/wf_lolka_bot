@@ -1,0 +1,16 @@
+{
+  "name": "wf-lolka-bot",
+  "version": "1.0.0",
+  "description": "Lolka-бот по Warframe с автообновляемой базой из официальных Public Export манифестов DE",
+  "main": "src/bot.js",
+  "scripts": {
+    "generate": "node tools/generate_data.js",
+    "start": "node src/bot.js",
+    "test": "node test/offline_test.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "lolka.js": "^0.4.4",
+    "lzma": "^2.3.2"
+  }
+}
