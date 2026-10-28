@@ -26,6 +26,7 @@ const MARKET_ITEMS_URL = 'https://api.warframe.market/v2/items';
 const WIKI_WARFRAMES_URL = 'https://wiki.warframe.com/api.php?action=parse&page=Module:Warframes/data&prop=wikitext&format=json';
 const BROWSE_WF_LIVE_URL = 'https://raw.githubusercontent.com/calamity-inc/browse.wf/senpai/live.ts';
 const BROWSE_WF_DICT_URL = 'https://browse.wf/warframe-public-export-plus';
+const BROWSE_WF_ARBYS_URL = 'https://browse.wf/arbys.txt';
 
 const OUT_DIR = path.join(__dirname, '..', 'data');
 const MANUAL_ALIASES_PATH = path.join(__dirname, 'manual_aliases.json');
@@ -391,6 +392,41 @@ async function fetchDuviriCircuit(knownNamesRu = {}) {
 }
 
 // ------------------------------------------------------------------------
+// Узлы арбитражей: метаданные нод из arbys.txt (browse.wf) + словарь RU
+// ------------------------------------------------------------------------
+
+// warframestat больше не отдаёт актуальный арбитраж, поэтому бот считает
+// текущую ноду по почасовому расписанию arbys.txt, а имена берёт отсюда
+async function fetchArbitrationNodes() {
+    const [arbysBuffer, regionsBuffer, dictRuBuffer] = await Promise.all([
+        downloadBuffer(BROWSE_WF_ARBYS_URL),
+        downloadBuffer(`${BROWSE_WF_DICT_URL}/ExportRegions.json`),
+        downloadBuffer(`${BROWSE_WF_DICT_URL}/dict.ru.json`)
+    ]);
+    const regions = JSON.parse(regionsBuffer.toString('utf8'));
+    const dictRu = JSON.parse(dictRuBuffer.toString('utf8'));
+
+    const loc = (key) => dictRu[key] || null;
+    const FACTION_RU = {
+        FC_GRINEER: 'Гринир', FC_CORPUS: 'Корпус', FC_INFESTATION: 'Заражённые',
+        FC_OROKIN: 'Орокин', FC_SENTIENT: 'Сентиенты', FC_MITW: 'Скрижаль'
+    };
+    const nodes = {};
+    for (const line of arbysBuffer.toString('utf8').split('\n')) {
+        const nodeKey = line.split(',')[1]?.trim();
+        const region = nodeKey && regions[nodeKey];
+        if (!region || nodes[nodeKey]) continue;
+        nodes[nodeKey] = {
+            name: loc(region.name) || nodeKey,
+            planet: loc(region.systemName) || '',
+            mission: loc(region.missionName) || '',
+            faction: FACTION_RU[region.faction] || ''
+        };
+    }
+    return nodes;
+}
+
+// ------------------------------------------------------------------------
 // Алиасы для поиска (авто + ручные из старого бота)
 // ------------------------------------------------------------------------
 
@@ -507,6 +543,15 @@ async function main() {
         console.warn(`⚠ Расписание цепи не получено: ${error.message}`);
     }
 
+    console.log('▶ Узлы арбитражей (browse.wf)...');
+    let arbitration = null;
+    try {
+        arbitration = await fetchArbitrationNodes();
+        console.log(`  узлов: ${Object.keys(arbitration).length}`);
+    } catch (error) {
+        console.warn(`⚠ Узлы арбитражей не получены: ${error.message}`);
+    }
+
     console.log('▶ Проверка слагов маркета...');
     const market = await fetchMarketData();
     let verified = 0;
@@ -540,6 +585,7 @@ async function main() {
     write('weapons.json', weapons);
     write('drops.json', drops);
     if (duviri) write('duviri.json', duviri);
+    if (arbitration) write('arbitration.json', arbitration);
     write('aliases.json', aliases);
     write('meta.json', {
         generatedAt: new Date().toISOString(),

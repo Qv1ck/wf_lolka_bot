@@ -42,7 +42,7 @@ function loadJson(name, fallback = {}) {
     }
 }
 
-const db = { warframes: {}, mods: {}, weapons: {}, drops: {}, aliases: {}, meta: {}, duviri: null };
+const db = { warframes: {}, mods: {}, weapons: {}, drops: {}, aliases: {}, meta: {}, duviri: null, arbitration: {} };
 
 function reloadData() {
     db.warframes = loadJson('warframes.json');
@@ -52,10 +52,13 @@ function reloadData() {
     db.aliases = loadJson('aliases.json');
     db.meta = loadJson('meta.json', {});
     db.duviri = loadJson('duviri.json', null);
+    db.arbitration = loadJson('arbitration.json', {});
     console.log(`✓ Данные: варфреймов ${Object.keys(db.warframes).length},` +
         ` модов ${Object.keys(db.mods).length}, оружия ${Object.keys(db.weapons).length}`);
 }
 reloadData();
+
+const live = require('./live');
 
 // Ручные справочники (в git) — запасной вариант, если сгенерированных данных нет
 const MANUAL_DIR = path.join(__dirname, '..', 'manual');
@@ -127,6 +130,67 @@ const MISSION_TYPES = {
 const PART_RU = {
     Neuroptics: 'Нейроптика', Chassis: 'Каркас', Systems: 'Системы', Blueprint: 'Чертёж'
 };
+
+// Фракции и модификаторы вылазки приходят из live-API по-английски
+const FACTION_RU = {
+    Grineer: 'Гринир', Corpus: 'Корпус', Infested: 'Заражённые',
+    Orokin: 'Орокин', Corrupted: 'Осквернённые', Sentient: 'Сентиенты',
+    'The Murmur': 'Скрижаль', Scaldra: 'Скальдра', Techrot: 'Техногниль'
+};
+
+const SORTIE_MOD_RU = {
+    'Enemy Physical Enhancement: Impact': 'Усиление врагов: ударный урон',
+    'Enemy Physical Enhancement: Slash': 'Усиление врагов: режущий урон',
+    'Enemy Physical Enhancement: Puncture': 'Усиление врагов: проникающий урон',
+    'Enemy Elemental Enhancement: Corrosive': 'Усиление врагов: коррозия',
+    'Enemy Elemental Enhancement: Viral': 'Усиление врагов: вирус',
+    'Enemy Elemental Enhancement: Electricity': 'Усиление врагов: электричество',
+    'Enemy Elemental Enhancement: Radiation': 'Усиление врагов: радиация',
+    'Enemy Elemental Enhancement: Gas': 'Усиление врагов: газ',
+    'Enemy Elemental Enhancement: Heat': 'Усиление врагов: огонь',
+    'Enemy Elemental Enhancement: Blast': 'Усиление врагов: взрыв',
+    'Enemy Elemental Enhancement: Cold': 'Усиление врагов: холод',
+    'Enemy Elemental Enhancement: Toxin': 'Усиление врагов: токсин',
+    'Enemy Elemental Enhancement: Magnetic': 'Усиление врагов: магнетизм',
+    'Eximus Stronghold': 'Крепость экзимусов',
+    'Energy Reduction': 'Снижение энергии',
+    'Radiation Hazard': 'Радиационная угроза',
+    'Electromagnetic Anomalies': 'Электромагнитные аномалии',
+    'Dense Fog': 'Густой туман',
+    'Fire Hazard': 'Пожароопасность',
+    'Cryogenic Leakage': 'Криогенная утечка',
+    'Extreme Cold': 'Экстремальный холод',
+    'Augmented Enemy Armor': 'Усиленная броня врагов',
+    'Enhanced Enemy Shields': 'Усиленные щиты врагов',
+    'Pistol Only': 'Только пистолеты',
+    'Shotgun Only': 'Только дробовики',
+    'Sniper Only': 'Только снайперские винтовки',
+    'Assault Rifle Only': 'Только штурмовые винтовки',
+    'Melee Only': 'Только ближний бой',
+    'Bow Only': 'Только луки'
+};
+
+const SORTIE_BOSS_RU = {
+    'Sargas Ruk': 'Саргас Рук', 'Kela De Thaym': 'Кела Де Тайм',
+    'Tyl Regor': 'Тил Регор', 'Nef Anyo': 'Неф Аньо',
+    Amar: 'Амар', Nira: 'Нира', Boreal: 'Борей'
+};
+
+// "Tycho (Lua)" → { node: 'Tycho', planet: 'Луа' }
+function parseNode(nodeStr) {
+    const m = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(nodeStr || '');
+    if (!m) return { node: nodeStr || '?', planet: '' };
+    return { node: m[1], planet: PLANET_NAMES[m[2]] || m[2] };
+}
+
+// "1ч 23м" до указанной даты
+function timeLeft(dateStr) {
+    const ms = Date.parse(dateStr) - Date.now();
+    if (ms <= 0) return 'скоро';
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    return h > 0 ? `${h}ч ${m}м` : `${m}м`;
+}
 
 const MARKET_URL = 'https://warframe.market/ru/items';
 
@@ -376,6 +440,105 @@ function circuitEmbed() {
 }
 
 // ========================================================================
+// LIVE-EMBED'Ы (текущее состояние мира)
+// ========================================================================
+
+async function fissuresEmbed() {
+    const all = (await live.getFissures())
+        .filter(f => !f.expired && !f.isStorm)
+        .sort((a, b) => a.tierNum - b.tierNum);
+
+    const format = (list) => list.slice(0, 12).map(f => {
+        const { node, planet } = parseNode(f.node);
+        return `**${f.tier}** · ${MISSION_TYPES[f.missionTypeKey] || f.missionType}` +
+            ` — ${FACTION_RU[f.enemyKey] || f.enemy} · ${node} (${planet}) · ${timeLeft(f.expiry)}`;
+    }).join('\n') || '—';
+
+    return new EmbedBuilder()
+        .setTitle('☢️ Разломы Бездны')
+        .setColor(COLOR_BASE)
+        .addFields(
+            { name: 'Обычные', value: format(all.filter(f => !f.isHard)) },
+            { name: 'Стальной Путь', value: format(all.filter(f => f.isHard)) }
+        )
+        .setFooter({ text: 'Данные: warframestat.us' });
+}
+
+async function sortieEmbed() {
+    const s = await live.getSortie();
+    const embed = new EmbedBuilder()
+        .setTitle(`📋 Вылазка — ${SORTIE_BOSS_RU[s.boss] || s.boss} (${FACTION_RU[s.factionKey] || s.faction})`)
+        .setColor(COLOR_BASE)
+        .setFooter({ text: `До конца: ${timeLeft(s.expiry)} · warframestat.us` });
+
+    s.variants.forEach((v, i) => {
+        const { node, planet } = parseNode(v.node);
+        embed.addFields({
+            name: `${i + 1}. ${MISSION_TYPES[v.missionTypeKey] || v.missionType} — ${node} (${planet})`,
+            value: `⚠ ${SORTIE_MOD_RU[v.modifier] || v.modifier}`
+        });
+    });
+    return embed;
+}
+
+async function arbitrationEmbed() {
+    const arb = await live.getArbitration(db.arbitration);
+    if (!arb || !arb.node) {
+        return new EmbedBuilder()
+            .setTitle('🎯 Арбитраж')
+            .setColor(COLOR_BASE)
+            .setDescription('Не удалось определить текущий узел.');
+    }
+    return new EmbedBuilder()
+        .setTitle('🎯 Арбитраж')
+        .setColor(COLOR_BASE)
+        .setDescription(
+            `**${arb.node.mission || '?'}** — ${arb.node.faction || '?'}\n` +
+            `${arb.node.name} (${arb.node.planet})\n` +
+            `Смена через ${timeLeft(new Date(arb.expiresAt).toISOString())}`
+        )
+        .setFooter({ text: 'Расписание: browse.wf' });
+}
+
+async function timeEmbed() {
+    const [cetus, vallis, cambion] = await Promise.all([
+        live.getCetus(), live.getVallis(), live.getCambion()
+    ]);
+    const row = (name, state, expiry) => `${name}: ${state} — смена через ${timeLeft(expiry)}`;
+    return new EmbedBuilder()
+        .setTitle('🌍 Циклы миров')
+        .setColor(COLOR_BASE)
+        .setDescription([
+            row('🌅 Равнины Эйдолона', cetus.isDay ? '☀️ день' : '🌑 НОЧЬ', cetus.expiry),
+            row('🏔 Долина Орбис', vallis.isWarm ? '☀️ тепло' : '❄️ холод', vallis.expiry),
+            row('🦠 Дрейф Камбионы', cambion.state === 'fass' ? '🟠 Фасс' : '🔵 Воум', cambion.expiry)
+        ].join('\n'))
+        .setFooter({ text: 'Данные: warframestat.us' });
+}
+
+function baroEmbed(vt) {
+    const active = Date.now() >= Date.parse(vt.activation) && Date.now() < Date.parse(vt.expiry);
+    const { node, planet } = parseNode(vt.location);
+    const embed = new EmbedBuilder()
+        .setTitle('🚑 Баро Ки\'Тиир')
+        .setColor(COLOR_PRIME);
+
+    if (!active) {
+        embed.setDescription(
+            `Прибывает **${new Date(vt.activation).toLocaleString('ru-RU')}**\n` +
+            `${node} (${planet}) — через ${timeLeft(vt.activation)}`
+        );
+    } else {
+        const items = (vt.inventory || []).slice(0, 20).map(i =>
+            `${i.item} — ${i.ducats} дук. + ${Number(i.credits).toLocaleString('ru-RU')} кр.`
+        ).join('\n') || 'Ассортимент ещё не раскрыт';
+        embed.setDescription(`**УЖЕ НА РЕЛЕЕ:** ${node} (${planet}), улетит через ${timeLeft(vt.expiry)}`)
+            .addFields({ name: '🛒 Ассортимент', value: truncate(items, 1000) });
+    }
+    return embed.setFooter({ text: 'Данные: warframestat.us' });
+}
+
+// ========================================================================
 // КОМАНДЫ
 // ========================================================================
 
@@ -416,7 +579,12 @@ const COMMANDS = [
     {
         name: 'circuit',
         description: 'Текущая неделя Цепи Дувири (варфреймы и инкарнон-оружия)'
-    }
+    },
+    { name: 'fissures', description: 'Активные разломы Бездны' },
+    { name: 'sortie', description: 'Вылазка дня' },
+    { name: 'arbitration', description: 'Текущий арбитраж' },
+    { name: 'time', description: 'Циклы миров (Равнины, Орбис, Деймос)' },
+    { name: 'baro', description: 'Баро Ки\'Тиир: когда и что привёз' }
 ];
 
 function autocompleteChoices(query, entries, makeChoice) {
@@ -469,6 +637,80 @@ function checkWeeklyUpdate() {
     if (dataWeekStamp() < currentWeekStamp()) {
         refreshDatabase('началась новая игровая неделя').catch(console.error);
     }
+}
+
+// ========================================================================
+// АВТОПОСТЫ В КАНАЛ (смена Цепи Дувири, прилёт Баро)
+// ========================================================================
+
+const STATE_PATH = path.join(__dirname, '..', 'state.json');
+const AUTOPOST_CHECK_MS = 15 * 60 * 1000;
+
+function loadState() {
+    try {
+        return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    } catch {
+        return null; // первый запуск — состояние записывается молча, без постов
+    }
+}
+
+function saveState(state) {
+    try {
+        fs.writeFileSync(STATE_PATH, JSON.stringify(state));
+    } catch (error) {
+        console.warn(`⚠ Не удалось сохранить state.json: ${error.message}`);
+    }
+}
+
+// Канал для автопостов: NEWS_CHANNEL_ID из .env, иначе ищем текстовый
+// канал со словом "warframe" в названии на сервере GUILD_ID
+let newsChannel = null;
+async function resolveNewsChannel() {
+    if (newsChannel) return newsChannel;
+    try {
+        if (process.env.NEWS_CHANNEL_ID) {
+            newsChannel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
+        } else if (process.env.GUILD_ID) {
+            const guild = await client.guilds.fetch(process.env.GUILD_ID);
+            const channels = await guild.channels.fetch();
+            newsChannel = channels.find(c => c.isTextBased() && /warframe/i.test(c.name)) || null;
+        }
+        if (newsChannel) console.log(`✓ Канал автопостов: #${newsChannel.name}`);
+    } catch (error) {
+        console.warn(`⚠ Канал автопостов не найден: ${error.message}`);
+    }
+    return newsChannel;
+}
+
+async function checkAutoposts() {
+    const channel = await resolveNewsChannel();
+    if (!channel) return;
+
+    const state = loadState();
+    const week = db.duviri ? currentWeekStamp() : null;
+
+    if (!state) {
+        saveState({ circuitWeek: week, baroNotified: true }); // баро без поста до первого визита
+        return;
+    }
+
+    if (week !== null && state.circuitWeek !== null && state.circuitWeek !== week) {
+        await channel.send({ embeds: [circuitEmbed()] }).catch(e => console.warn(`⚠ автопост цепи: ${e.message}`));
+    }
+    if (week !== null) state.circuitWeek = week;
+
+    try {
+        const vt = await live.getVoidTrader();
+        const active = Date.now() >= Date.parse(vt.activation) && Date.now() < Date.parse(vt.expiry);
+        if (active && state.baroId !== vt.id) {
+            await channel.send({ embeds: [baroEmbed(vt)] }).catch(e => console.warn(`⚠ автопост Баро: ${e.message}`));
+            state.baroId = vt.id;
+        }
+    } catch (error) {
+        console.warn(`⚠ проверка Баро: ${error.message}`);
+    }
+
+    saveState(state);
 }
 
 // ========================================================================
@@ -532,6 +774,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
             return;
         }
 
+        // Live-команды: запрос к API, ответ может занять пару секунд
+        const LIVE_HANDLERS = {
+            fissures: fissuresEmbed,
+            sortie: sortieEmbed,
+            arbitration: arbitrationEmbed,
+            time: timeEmbed,
+            baro: async () => baroEmbed(await live.getVoidTrader())
+        };
+        if (LIVE_HANDLERS[interaction.commandName]) {
+            await interaction.deferReply();
+            try {
+                await interaction.editReply({ embeds: [await LIVE_HANDLERS[interaction.commandName]()] });
+            } catch (error) {
+                console.error(`❌ live-команда ${interaction.commandName}:`, error.message);
+                await interaction.editReply({ content: '❌ Live-данные сейчас недоступны, попробуйте позже.' });
+            }
+            return;
+        }
+
         const query = interaction.options.getString('запрос');
 
         if (interaction.commandName === 'search') {
@@ -573,7 +834,12 @@ if (require.main === module) {
         process.exit(1);
     }
     setInterval(checkWeeklyUpdate, UPDATE_CHECK_MS);
-    client.login(token).catch(error => {
+    checkWeeklyUpdate();
+    client.login(token).then(() => {
+        setInterval(checkAutoposts, AUTOPOST_CHECK_MS);
+        // первый запуск — инициализация состояния без постов
+        setTimeout(checkAutoposts, 10_000);
+    }).catch(error => {
         console.error('❌ Ошибка входа:', error.message);
         process.exit(1);
     });
