@@ -199,7 +199,7 @@ function primeMarketText(prime) {
     const parts = ['Neuroptics', 'Chassis', 'Systems', 'Blueprint']
         .map(p => `[${PART_RU[p]}](${MARKET_URL}/${prime.slug}_${p.toLowerCase()})`)
         .join(' · ');
-    return `||${set}||\n||${parts}||`;
+    return `${set}\n${parts}`;
 }
 
 function warframeEmbed(wf) {

@@ -25,7 +25,6 @@ assert.ok(embed.fields.some(f => f.name === '🎯 Где добыть'), 'мес
 const primeField = embed.fields.find(f => f.name.includes('Локи Прайм'));
 assert.ok(primeField, 'поле прайм-версии');
 assert.ok(primeField.value.includes('warframe.market/ru/items/loki_prime_set'), 'ссылка на маркет');
-assert.ok(primeField.value.includes('||'), 'спойлер-разметка');
 
 // --- Прайм-вариант напрямую ---
 const lokiPrime = findWarframe('Loki Prime');
