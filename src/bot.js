@@ -183,9 +183,10 @@ function parseNode(nodeStr) {
     return { node: m[1], planet: PLANET_NAMES[m[2]] || m[2] };
 }
 
-// "1ч 23м" до указанной даты
-function timeLeft(dateStr) {
-    const ms = Date.parse(dateStr) - Date.now();
+// "1ч 23м" до указанной даты (ISO-строка или миллисекунды)
+function timeLeft(date) {
+    const target = typeof date === 'number' ? date : Date.parse(date);
+    const ms = target - Date.now();
     if (ms <= 0) return 'скоро';
     const h = Math.floor(ms / 3_600_000);
     const m = Math.floor((ms % 3_600_000) / 60_000);
@@ -517,25 +518,23 @@ async function timeEmbed() {
 }
 
 function baroEmbed(vt) {
-    const active = Date.now() >= Date.parse(vt.activation) && Date.now() < Date.parse(vt.expiry);
-    const { node, planet } = parseNode(vt.location);
     const embed = new EmbedBuilder()
         .setTitle('🚑 Баро Ки\'Тиир')
         .setColor(COLOR_PRIME);
 
-    if (!active) {
+    if (!vt.active) {
         embed.setDescription(
             `Прибывает **${new Date(vt.activation).toLocaleString('ru-RU')}**\n` +
-            `${node} (${planet}) — через ${timeLeft(vt.activation)}`
+            `${vt.location} — через ${timeLeft(vt.activation)}`
         );
     } else {
-        const items = (vt.inventory || []).slice(0, 20).map(i =>
-            `${i.item} — ${i.ducats} дук. + ${Number(i.credits).toLocaleString('ru-RU')} кр.`
+        const items = vt.items.slice(0, 20).map(i =>
+            `${i.name} — ${i.ducats} дук. + ${Number(i.credits).toLocaleString('ru-RU')} кр.`
         ).join('\n') || 'Ассортимент ещё не раскрыт';
-        embed.setDescription(`**УЖЕ НА РЕЛЕЕ:** ${node} (${planet}), улетит через ${timeLeft(vt.expiry)}`)
+        embed.setDescription(`**УЖЕ НА РЕЛЕЕ:** ${vt.location}, улетит через ${timeLeft(vt.expiry)}`)
             .addFields({ name: '🛒 Ассортимент', value: truncate(items, 1000) });
     }
-    return embed.setFooter({ text: 'Данные: warframestat.us' });
+    return embed.setFooter({ text: 'Данные: worldState DE через oracle.browse.wf' });
 }
 
 // ========================================================================
@@ -700,9 +699,8 @@ async function checkAutoposts() {
     if (week !== null) state.circuitWeek = week;
 
     try {
-        const vt = await live.getVoidTrader();
-        const active = Date.now() >= Date.parse(vt.activation) && Date.now() < Date.parse(vt.expiry);
-        if (active && state.baroId !== vt.id) {
+        const vt = await live.getBaro();
+        if (vt && vt.active && state.baroId !== vt.id) {
             await channel.send({ embeds: [baroEmbed(vt)] }).catch(e => console.warn(`⚠ автопост Баро: ${e.message}`));
             state.baroId = vt.id;
         }
@@ -780,7 +778,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             sortie: sortieEmbed,
             arbitration: arbitrationEmbed,
             time: timeEmbed,
-            baro: async () => baroEmbed(await live.getVoidTrader())
+            baro: async () => {
+                const vt = await live.getBaro();
+                if (!vt) throw new Error('Баро не найден в worldState');
+                return baroEmbed(vt);
+            }
         };
         if (LIVE_HANDLERS[interaction.commandName]) {
             await interaction.deferReply();
