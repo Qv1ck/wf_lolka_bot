@@ -24,7 +24,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const {
-    Client, GatewayIntentBits, EmbedBuilder, REST, Routes, Events
+    Client, GatewayIntentBits, EmbedBuilder, Routes, Events
 } = require('lolka.js');
 
 // ========================================================================
@@ -340,7 +340,7 @@ client.once(Events.ClientReady, async (c) => {
     console.log(`✓ Вошли как ${c.user.tag}`);
 
     try {
-        const rest = new REST().setToken(token);
+        const rest = c.rest; // внутренний REST клиента уже настроен на API Lolka
         const body = COMMANDS;
         if (process.env.GUILD_ID) {
             await rest.put(
