@@ -1,0 +1,226 @@
+{
+  "Ash": {
+    "ability": "Сюрикен",
+    "slot": 1
+  },
+  "Atlas": {
+    "ability": "Окаменение",
+    "slot": 3
+  },
+  "Banshee": {
+    "ability": "Тишина",
+    "slot": 2
+  },
+  "Baruuk": {
+    "ability": "Усыпление",
+    "slot": 2
+  },
+  "Caliban": {
+    "ability": "Ликвидатор",
+    "slot": 2
+  },
+  "Chroma": {
+    "ability": "Элементальный Оберег",
+    "slot": 2
+  },
+  "Citrine": {
+    "ability": "Раскалывающий Взрыв",
+    "slot": 2
+  },
+  "Dagath": {
+    "ability": "Зловещие Косы",
+    "slot": 2
+  },
+  "Ember": {
+    "ability": "Огненный Взрыв",
+    "slot": 3
+  },
+  "Equinox": {
+    "ability": "Покой и Провокация",
+    "slot": 2
+  },
+  "Excalibur": {
+    "ability": "Ослепляющий Свет",
+    "slot": 2
+  },
+  "Frost": {
+    "ability": "Ледяная Волна",
+    "slot": 2
+  },
+  "Gara": {
+    "ability": "Спектрошторм",
+    "slot": 3
+  },
+  "Garuda": {
+    "ability": "Кровавый Алтарь",
+    "slot": 2
+  },
+  "Gauss": {
+    "ability": "Термальный Подрыв",
+    "slot": 3
+  },
+  "Grendel": {
+    "ability": "Насыщение",
+    "slot": 2
+  },
+  "Gyre": {
+    "ability": "Кольцо Катерсис",
+    "slot": 2
+  },
+  "Harrow": {
+    "ability": "Осуждение",
+    "slot": 1
+  },
+  "Hildryn": {
+    "ability": "Грабёж",
+    "slot": 2
+  },
+  "Hydroid": {
+    "ability": "Шторм Темпестарии",
+    "slot": 1
+  },
+  "Inaros": {
+    "ability": "Иссушение",
+    "slot": 1
+  },
+  "Ivara": {
+    "ability": "Колчан",
+    "slot": 1
+  },
+  "Khora": {
+    "ability": "Захват",
+    "slot": 2
+  },
+  "Kullervo": {
+    "ability": "Возмездие",
+    "slot": 2
+  },
+  "Lavos": {
+    "ability": "Ядовитые Змеи",
+    "slot": 1
+  },
+  "Limbo": {
+    "ability": "Изгнание",
+    "slot": 1
+  },
+  "Loki": {
+    "ability": "Обманка",
+    "slot": 1
+  },
+  "Mag": {
+    "ability": "Притягивание",
+    "slot": 1
+  },
+  "Mesa": {
+    "ability": "Тир",
+    "slot": 2
+  },
+  "Mirage": {
+    "ability": "Затмение",
+    "slot": 3
+  },
+  "Nekros": {
+    "ability": "Устрашение",
+    "slot": 2
+  },
+  "Nezha": {
+    "ability": "Огненный Путь",
+    "slot": 1
+  },
+  "Nidus": {
+    "ability": "Личинка",
+    "slot": 2
+  },
+  "Nova": {
+    "ability": "Нуль-Звезда",
+    "slot": 1
+  },
+  "Nyx": {
+    "ability": "Контроль Разума",
+    "slot": 1
+  },
+  "Oberon": {
+    "ability": "Кара",
+    "slot": 1
+  },
+  "Octavia": {
+    "ability": "Резонатор",
+    "slot": 3
+  },
+  "Protea": {
+    "ability": "Раздатчик",
+    "slot": 3
+  },
+  "Qorvex": {
+    "ability": "Хитиновая Стена",
+    "slot": 2
+  },
+  "Revenant": {
+    "ability": "Жатва",
+    "slot": 3
+  },
+  "Rhino": {
+    "ability": "Рёв",
+    "slot": 3
+  },
+  "Saryn": {
+    "ability": "Линька",
+    "slot": 2
+  },
+  "Sevagoth": {
+    "ability": "Уныние",
+    "slot": 3
+  },
+  "Styanax": {
+    "ability": "Метательное Копьё",
+    "slot": 1
+  },
+  "Titania": {
+    "ability": "Чары",
+    "slot": 1
+  },
+  "Trinity": {
+    "ability": "Источник Жизни",
+    "slot": 1
+  },
+  "Valkyr": {
+    "ability": "Боевой Клич",
+    "slot": 2
+  },
+  "Vauban": {
+    "ability": "Тесла Нервос ",
+    "slot": 1
+  },
+  "Volt": {
+    "ability": "Шок",
+    "slot": 1
+  },
+  "Voruna": {
+    "ability": "Волчья Стая",
+    "slot": 1
+  },
+  "Wisp": {
+    "ability": "Прорыв",
+    "slot": 3
+  },
+  "Wukong": {
+    "ability": "Неповиновение",
+    "slot": 3
+  },
+  "Xaku": {
+    "ability": "Шёпот Ксеты",
+    "slot": 1
+  },
+  "Yareli": {
+    "ability": "Водные Лезвия",
+    "slot": 2
+  },
+  "Zephyr": {
+    "ability": "Воздушный Рывок",
+    "slot": 1
+  },
+  "Temple": {
+    "ability": "Пиротехника",
+    "slot": 1
+  }
+}

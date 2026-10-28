@@ -18,7 +18,9 @@ assert.ok(findWarframe('asdfrandomnonexistent') === null, 'мусор не на�
 const loki = findWarframe('Локи');
 const embed = warframeEmbed(loki).toJSON();
 assert.strictEqual(embed.title, '🤖 Локи (Loki)');
-assert.ok(embed.fields.some(f => f.name.includes('Приманка')), 'способности из манифеста');
+assert.ok(embed.fields.some(f => f.name === '⚡ Способности' && f.value.includes('Приманка')), 'способности из манифеста');
+assert.ok(embed.fields.some(f => f.name === '🧬 Гельминт-способность'), 'гельминт');
+assert.ok(embed.fields.some(f => f.name === '🌀 Цепь Дувири'), 'цепь дувири');
 assert.ok(embed.fields.some(f => f.name === '🎯 Где добыть'), 'места дропа');
 const primeField = embed.fields.find(f => f.name.includes('Локи Прайм'));
 assert.ok(primeField, 'поле прайм-версии');

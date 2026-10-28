@@ -49,6 +49,18 @@ const drops = loadJson('drops.json');
 const aliases = loadJson('aliases.json');
 const meta = loadJson('meta.json', {});
 
+// Ручные справочники (в git): Гельминт и недели Цепи Дувири
+const MANUAL_DIR = path.join(__dirname, '..', 'manual');
+const helminthDB = JSON.parse(fs.readFileSync(path.join(MANUAL_DIR, 'helminth.json'), 'utf8'));
+const duviriDB = JSON.parse(fs.readFileSync(path.join(MANUAL_DIR, 'duviri.json'), 'utf8'));
+
+// Обычная Цепь Дувири: 11-недельный цикл, опорная точка — неделя 3 от 24.11.2025
+function getCurrentDuviriWarframeWeek(now = new Date()) {
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const elapsed = Math.floor((now.getTime() - Date.parse('2025-11-24T00:00:00Z')) / WEEK_MS);
+    return ((3 - 1 + elapsed) % 11 + 11) % 11 + 1;
+}
+
 // ========================================================================
 // ПЕРЕВОДЫ
 // ========================================================================
@@ -193,29 +205,43 @@ function primeMarketText(prime) {
 function warframeEmbed(wf) {
     const embed = new EmbedBuilder()
         .setTitle(`🤖 ${wf.nameRu} (${wf.nameEn})`)
-        .setDescription(truncate(cleanDescription(wf.description), 400) || null)
         .setColor(wf.isPrime ? COLOR_PRIME : COLOR_BASE)
         .setFooter(dataFooter());
 
     if (wf.isPrime && wf.market?.thumb) embed.setThumbnail(wf.market.thumb);
 
-    wf.abilities.forEach((a, i) => {
+    if (wf.abilities.length) {
         embed.addFields({
-            name: `${i + 1}. ${a.name}`,
-            value: truncate(cleanDescription(a.description), 300) || '\u200b'
+            name: '⚡ Способности',
+            value: wf.abilities.map((a, i) => `${i + 1}. ${a.name}`).join('\n')
         });
-    });
+    }
+
+    const helminth = helminthDB[wf.baseName] || helminthDB[wf.nameEn];
+    if (helminth) {
+        embed.addFields({
+            name: '🧬 Гельминт-способность',
+            value: `${helminth.ability} (слот ${helminth.slot})`
+        });
+    }
 
     const s = wf.stats;
     embed.addFields({
-        name: '📊 Характеристики',
+        name: '📊 Статы',
         value: `❤️ ${s.health} · 🛡 ${s.shield} · 🔩 ${s.armor} · ⚡ ${s.energy} · 🏃 ${s.sprint}` +
                (s.mr ? ` · 🎖 РМ ${s.mr}` : ''),
         inline: false
     });
 
-    if (wf.passive) {
-        embed.addFields({ name: '✨ Пассивная способность', value: truncate(cleanDescription(wf.passive), 300) });
+    const duviriWeek = duviriDB[wf.baseName.toLowerCase()];
+    if (duviriWeek) {
+        const current = getCurrentDuviriWarframeWeek();
+        embed.addFields({
+            name: '🌀 Цепь Дувири',
+            value: duviriWeek === current
+                ? `Неделя ${duviriWeek} из 11 — ✅ доступен СЕЙЧАС`
+                : `Неделя ${duviriWeek} из 11 (сейчас ${current})`
+        });
     }
 
     if (wf.isPrime) {
